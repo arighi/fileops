@@ -3,9 +3,13 @@
 #include <linux/module.h>
 #include <linux/syscalls.h>
 #include <linux/file.h>
+#include <linux/slab.h>
 #include <linux/fs.h>
 #include <linux/fcntl.h>
 #include <asm/uaccess.h>
+
+static const char *file_name = "/tmp/test";
+static const char *file_content = "Evil file.";
 
 static int set_memalloc(void)
 {
@@ -83,18 +87,16 @@ static int file_sync(struct file *file)
 	return vfs_fsync(file, 0);
 }
 
-static const char *string = "Evil file.";
-
-static int __init write_init(void)
+static int test_write(void)
 {
 	struct file *file;
 	loff_t pos = 0;
 	int ret;
 
-	file = file_open("/tmp/test", O_WRONLY | O_CREAT, 0600);
+	file = file_open(file_name, O_WRONLY | O_CREAT, 0600);
 	if (IS_ERR(file))
 		return PTR_ERR(file);
-	ret = file_write(file, string, strlen(string), &pos);
+	ret = file_write(file, file_content, strlen(file_content), &pos);
 	if (!ret)
 		file_sync(file);
 	file_close(file);
@@ -102,11 +104,44 @@ static int __init write_init(void)
 	return 0;
 }
 
-static void __exit write_exit(void)
+static int test_read(void)
 {
+	char *buf;
+	struct file *file;
+	loff_t pos = 0;
+	int ret;
+
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (unlikely(!buf))
+		return -ENOMEM;
+	file = file_open(file_name, O_RDONLY, 0600);
+	if (IS_ERR(file)) {
+		printk(KERN_INFO "couldn't open file %s\n", file_name);
+		ret = PTR_ERR(file);
+		goto out;
+	}
+	ret = file_read(file, buf, PAGE_SIZE, &pos);
+	if (ret > 0)
+		printk(KERN_INFO "%s\n", buf);
+	file_close(file);
+out:
+	kfree(buf);
+
+	return ret;
 }
 
-module_init(write_init);
-module_exit(write_exit);
+static int __init fileops_init(void)
+{
+	return test_write();
+}
+
+static void __exit fileops_exit(void)
+{
+	test_read();
+}
+
+module_init(fileops_init);
+module_exit(fileops_exit);
 
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Andrea Righi <andrea@betterlinux.com>");
