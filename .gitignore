@@ -1,0 +1,10 @@
+.fileops.ko.cmd
+.fileops.mod.o.cmd
+.fileops.o.cmd
+.tmp_versions/
+Module.symvers
+fileops.ko
+fileops.mod.c
+fileops.mod.o
+fileops.o
+modules.order
