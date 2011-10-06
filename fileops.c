@@ -17,6 +17,20 @@
  * Boston, MA 021110-1307, USA.
  *
  * Copyright (C) 2011 Andrea Righi <andrea@betterlinux.com>
+ *
+ * === WARNING ===
+ *
+ * Sit down and THINK before using this approach in your code!
+ *
+ * Reading and writing a file within the kernel is a bad, bad, BAD thing to do.
+ *
+ * You should never write a module that requires reading or writing to a file.
+ * There are well-designed interfaces to exchange informations between kernel
+ * and userspace: procfs, sysfs, block/char devices, etc...
+ *
+ * That said, it is actually possible to do file I/O in the kernel, and this is
+ * an example, but doing so is a severe violation of standard practice and it
+ * can also lead to races and crashes.
  */
 
 #include <linux/kernel.h>
@@ -237,4 +251,4 @@ module_exit(fileops_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrea Righi <andrea@betterlinux.com>");
-MODULE_DESCRIPTION("Filesystem operations from kernel space");
+MODULE_DESCRIPTION("Example of file operations from kernel space");
