@@ -1,3 +1,24 @@
+/*
+ * fileops: filesystem operations from kernel space
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
+ *
+ * Copyright (C) 2011 Andrea Righi <andrea@betterlinux.com>
+ */
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -24,6 +45,7 @@ struct pagecache_pool {
 };
 static struct pagecache_pool page_pool;
 
+/* Release page cache pages from the page pool */
 static void put_pages(struct pagecache_pool *pp)
 {
 	int i;
@@ -32,6 +54,7 @@ static void put_pages(struct pagecache_pool *pp)
 		page_cache_release(pp->held_pages[i]);
 }
 
+/* Pre-allocate page pool pages */
 static int get_pages(struct pagecache_pool *pp,
 			struct file *file, size_t count, loff_t pos)
 {
@@ -63,6 +86,7 @@ static int get_pages(struct pagecache_pool *pp,
 	return 0;
 }
 
+/* Current task should never get caught in the normal page freeing logic */
 static int set_memalloc(void)
 {
 	if (current->flags & PF_MEMALLOC)
@@ -71,12 +95,14 @@ static int set_memalloc(void)
 	return 1;
 }
 
+/* Restore old PF_MEMALLOC value */
 static void clear_memalloc(int memalloc)
 {
 	if (memalloc)
 		current->flags &= ~PF_MEMALLOC;
 }
 
+/* Open a file from kernel space. Yay! */
 static struct file *file_open(const char *filename, int flags, int mode)
 {
 	struct file *file;
@@ -94,12 +120,14 @@ static struct file *file_open(const char *filename, int flags, int mode)
 	return file;
 }
 
+/* Close a file handle */
 static void file_close(struct file *file)
 {
 	if (file)
 		filp_close(file, NULL);
 }
 
+/* Read some data from a opened file handle */
 static ssize_t
 file_read(struct file *file, void *data, size_t count, loff_t *pos)
 {
@@ -121,6 +149,7 @@ file_read(struct file *file, void *data, size_t count, loff_t *pos)
 	return size;
 }
 
+/* Write some data to a opened file handle */
 static ssize_t
 file_write(struct file *file, const void *data, size_t count, loff_t *pos)
 {
@@ -142,11 +171,13 @@ file_write(struct file *file, const void *data, size_t count, loff_t *pos)
         return size;
 }
 
+/* Be sure cached data are written to the device */
 static int file_sync(struct file *file)
 {
 	return vfs_fsync(file, 0);
 }
 
+/* Test routine: create a file and write some data */
 static int test_write(void)
 {
 	struct file *file;
@@ -164,6 +195,7 @@ static int test_write(void)
 	return 0;
 }
 
+/* Test routine: read some data from a previously created file */
 static int test_read(void)
 {
 	char *buf;
@@ -205,3 +237,4 @@ module_exit(fileops_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrea Righi <andrea@betterlinux.com>");
+MODULE_DESCRIPTION("Filesystem operations from kernel space");
