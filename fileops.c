@@ -4,12 +4,64 @@
 #include <linux/syscalls.h>
 #include <linux/file.h>
 #include <linux/slab.h>
+#include <linux/pagemap.h>
 #include <linux/fs.h>
 #include <linux/fcntl.h>
 #include <asm/uaccess.h>
 
-static const char *file_name = "/tmp/test";
-static const char *file_content = "Evil file.";
+/* Support file operations for up to 16 pages of data */
+#define MAX_HELD_PAGES 16
+
+static const char *file_name = "/tmp/test.txt";
+static const char *file_content = "Evil file. Created from kernel space...";
+
+/*
+ * Pool to get page cache pages in advance to provide NOFS memory allocation.
+ */
+struct pagecache_pool {
+	struct page *held_pages[MAX_HELD_PAGES];
+	int held_cnt;
+};
+static struct pagecache_pool page_pool;
+
+static void put_pages(struct pagecache_pool *pp)
+{
+	int i;
+
+	for (i = 0; i < pp->held_cnt; i++)
+		page_cache_release(pp->held_pages[i]);
+}
+
+static int get_pages(struct pagecache_pool *pp,
+			struct file *file, size_t count, loff_t pos)
+{
+	pgoff_t index, start_index, end_index;
+	struct page *page;
+	struct address_space *mapping = file->f_mapping;
+
+	start_index = pos >> PAGE_CACHE_SHIFT;
+	end_index = (pos + count - 1) >> PAGE_CACHE_SHIFT;
+	if (end_index - start_index + 1 > MAX_HELD_PAGES)
+		return -EFBIG;
+	pp->held_cnt = 0;
+	for (index = start_index; index <= end_index; index++) {
+		page = find_get_page(mapping, index);
+		if (page == NULL) {
+			page = find_or_create_page(mapping, index, GFP_NOFS);
+			if (page == NULL) {
+				write_inode_now(mapping->host, 1);
+				page = find_or_create_page(mapping, index, GFP_NOFS);
+			}
+			if (page == NULL) {
+				put_pages(pp);
+				return -ENOMEM;
+			}
+			unlock_page(page);
+		}
+		pp->held_pages[pp->held_cnt++] = page;
+	}
+	return 0;
+}
 
 static int set_memalloc(void)
 {
@@ -52,17 +104,21 @@ static ssize_t
 file_read(struct file *file, void *data, size_t count, loff_t *pos)
 {
 	mm_segment_t oldfs;
-	ssize_t ret;
+	ssize_t size;
 	int memalloc;
 
+	size = get_pages(&page_pool, file, count, *pos);
+	if (size < 0)
+		return size;
 	oldfs = get_fs();
 	set_fs(get_ds());
         memalloc = set_memalloc();
-	ret = vfs_read(file, (char __user *)data, count, pos);
+	size = vfs_read(file, (char __user *)data, count, pos);
         clear_memalloc(memalloc);
 	set_fs(oldfs);
+	put_pages(&page_pool);
 
-	return ret;
+	return size;
 }
 
 static ssize_t
@@ -72,12 +128,16 @@ file_write(struct file *file, const void *data, size_t count, loff_t *pos)
 	ssize_t size;
 	int memalloc;
 
+	size = get_pages(&page_pool, file, count, *pos);
+	if (size < 0)
+		return size;
         old_fs = get_fs();
         set_fs(get_ds());
         memalloc = set_memalloc();
         size = vfs_write(file, (const char __user *)data, count, pos);
         clear_memalloc(memalloc);
         set_fs(old_fs);
+	put_pages(&page_pool);
 
         return size;
 }
